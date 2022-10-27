@@ -1,7 +1,4 @@
-use libc::{
-    c_uint,
-    size_t,
-};
+use libc::{c_uint, size_t};
 use std::ffi::CString;
 #[cfg(windows)]
 use std::ffi::OsStr;
@@ -9,36 +6,20 @@ use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::sync::Mutex;
-use std::{
-    fmt,
-    mem,
-    ptr,
-    result,
-};
+use std::{fmt, mem, ptr, result};
 
 use ffi;
 
-use byteorder::{
-    ByteOrder,
-    NativeEndian,
-};
+use byteorder::{ByteOrder, NativeEndian};
 
 use cursor::Cursor;
 use database::Database;
-use error::{
-    lmdb_result,
-    Error,
-    Result,
-};
-use flags::{
-    DatabaseFlags,
-    EnvironmentFlags,
-};
-use transaction::{
-    RoTransaction,
-    RwTransaction,
-    Transaction,
-};
+use error::{lmdb_result, Error, Result};
+use flags::{DatabaseFlags, EnvironmentFlags};
+use transaction::{RoTransaction, RwTransaction, Transaction};
+
+const RESIZE_PERCENT: f32 = 0.9;
+const ADD_SIZE: u32 = 1 << 30; // 1GB
 
 #[cfg(windows)]
 /// Adding a 'missing' trait from windows OsStrExt
@@ -95,9 +76,27 @@ impl Environment {
     ///
     /// The database name may not contain the null character.
     pub fn open_db<'env>(&'env self, name: Option<&str>) -> Result<Database> {
+        self.open_db_with_flags(name, 0)
+    }
+
+    /// Opens a handle to an LMDB database.
+    ///
+    /// If `name` is `None`, then the returned handle will be for the default database.
+    ///
+    /// If `name` is not `None`, then the returned handle will be for a named database. In this
+    /// case the environment must be configured to allow named databases through
+    /// `EnvironmentBuilder::set_max_dbs`.
+    ///
+    /// The returned database handle may be shared among any transaction in the environment.
+    ///
+    /// This function will fail with `Error::BadRslot` if called by a thread which has an ongoing
+    /// transaction.
+    ///
+    /// The database name may not contain the null character.
+    pub fn open_db_with_flags<'env>(&'env self, name: Option<&str>, flags: u32) -> Result<Database> {
         let mutex = self.dbi_open_mutex.lock();
         let txn = self.begin_ro_txn()?;
-        let db = unsafe { txn.open_db(name)? };
+        let db = unsafe { txn.open_db(name, flags)? };
         txn.commit()?;
         drop(mutex);
         Ok(db)
@@ -266,6 +265,42 @@ impl Environment {
     ///   will fail with `Error::MapResized`.
     pub fn set_map_size(&self, size: size_t) -> Result<()> {
         unsafe { lmdb_result(ffi::mdb_env_set_mapsize(self.env(), size)) }
+    }
+
+    /// Checks if the LMDB memory map needs to be resized
+    ///
+    /// equivalent to [`BlockchainLMDB::need_resize`] in the Monero codebase:
+    /// https://github.com/monero-project/monero/blob/fc907a957078cae2dc68348886a33363848dd089/src/blockchain_db/lmdb/db_lmdb.cpp#L618
+    pub fn need_resize(&self) -> Result<bool> {
+        let stats = self.stat()?;
+        let info = self.info()?;
+        let size_used = stats.page_size() as usize * info.last_pgno();
+        if size_used as f32 / info.map_size() as f32 > RESIZE_PERCENT {
+            return Ok(true);
+        } else {
+            return Ok(false);
+        }
+    }
+
+    /// Resizes the memory map by 1GB
+    ///
+    /// equivalent to [`BlockchainLMDB::do_resize`] in the Monero codebase:
+    /// https://github.com/monero-project/monero/blob/fc907a957078cae2dc68348886a33363848dd089/src/blockchain_db/lmdb/db_lmdb.cpp#L549
+    pub fn do_resize(&self) -> Result<()> {
+        let stats = self.stat()?;
+        let info = self.info()?;
+        let mut new_mapsize = info.map_size() as u32 + ADD_SIZE;
+        new_mapsize += new_mapsize % stats.page_size() as u32;
+        self.set_map_size(new_mapsize as usize)?;
+        Ok(())
+    }
+
+    /// Checks if the LMDB memory map needs to be resized then resizes if necessary
+    pub fn check_do_resize(&self) -> Result<()> {
+        if self.need_resize()? {
+            self.do_resize()?;
+        }
+        Ok(())
     }
 }
 
@@ -487,10 +522,7 @@ mod test {
 
     extern crate byteorder;
 
-    use self::byteorder::{
-        ByteOrder,
-        LittleEndian,
-    };
+    use self::byteorder::{ByteOrder, LittleEndian};
     use tempdir::TempDir;
 
     use flags::*;

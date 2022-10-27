@@ -1,38 +1,61 @@
-use libc::{
-    c_uint,
-    c_void,
-    size_t,
-};
+use libc::{c_uint, c_void, size_t};
 use std::marker::PhantomData;
-use std::{
-    fmt,
-    mem,
-    ptr,
-    result,
-    slice,
-};
+use std::{fmt, mem, ptr, result, slice};
 
 use ffi;
 
-use cursor::{
-    RoCursor,
-    RwCursor,
-};
+use cursor::{RoCursor, RwCursor};
 use database::Database;
-use environment::{
-    Environment,
-    Stat,
-};
-use error::{
-    lmdb_result,
-    Error,
-    Result,
-};
-use flags::{
-    DatabaseFlags,
-    EnvironmentFlags,
-    WriteFlags,
-};
+use environment::{Environment, Stat};
+use error::{lmdb_result, Error, Result};
+use flags::{DatabaseFlags, EnvironmentFlags, WriteFlags};
+
+extern "C" fn compare_hash32(a: *const ffi::MDB_val, b: *const ffi::MDB_val) -> ::libc::c_int {
+    unsafe {
+        let va = (*a).mv_data.cast::<u32>();
+        let vb = (*b).mv_data.cast::<u32>();
+        for i in (0..8).rev() {
+            match u32::cmp(&va.add(i).read(), &vb.add(i).read()) {
+                std::cmp::Ordering::Equal => {},
+                std::cmp::Ordering::Greater => return 1,
+                std::cmp::Ordering::Less => return -1,
+            }
+        }
+        return 0;
+    }
+}
+
+extern "C" fn compare_uint64(a: *const ffi::MDB_val, b: *const ffi::MDB_val) -> ::libc::c_int {
+    unsafe {
+        let va = (*a).mv_data.cast::<u64>().read();
+        let vb = (*b).mv_data.cast::<u64>().read();
+        match u64::cmp(&va, &vb) {
+            std::cmp::Ordering::Equal => return 0,
+            std::cmp::Ordering::Greater => return 1,
+            std::cmp::Ordering::Less => return -1,
+        }
+    }
+}
+
+extern "C" fn compare_string(a: *const ffi::MDB_val, b: *const ffi::MDB_val) -> ::libc::c_int {
+    unsafe {
+        let va = (*a).mv_data.cast::<u8>();
+        let vb = (*b).mv_data.cast::<u8>();
+
+        for i in 0..usize::min((*a).mv_size, (*a).mv_size) {
+            match u8::cmp(&va.add(i).read(), &vb.add(i).read()) {
+                std::cmp::Ordering::Equal => {},
+                std::cmp::Ordering::Greater => return 1,
+                std::cmp::Ordering::Less => return -1,
+            }
+        }
+        match usize::cmp(&(*a).mv_size, &(*b).mv_size) {
+            std::cmp::Ordering::Equal => return 0,
+            std::cmp::Ordering::Greater => return 1,
+            std::cmp::Ordering::Less => return -1,
+        }
+    }
+}
 
 /// An LMDB transaction.
 ///
@@ -79,8 +102,8 @@ pub trait Transaction: Sized {
     /// from multiple concurrent transactions in the same environment. A
     /// transaction which uses this function must finish (either commit or
     /// abort) before any other transaction may use this function.
-    unsafe fn open_db(&self, name: Option<&str>) -> Result<Database> {
-        Database::new(self.txn(), name, 0)
+    unsafe fn open_db(&self, name: Option<&str>, flags: u32) -> Result<Database> {
+        Database::new(self.txn(), name, flags)
     }
 
     /// Gets an item from a database.
@@ -133,6 +156,31 @@ pub trait Transaction: Sized {
             lmdb_try!(ffi::mdb_stat(self.txn(), db.dbi(), stat.mdb_stat()));
             Ok(stat)
         }
+    }
+
+    /// Sets the 'dupsort' to compare_hash32
+    fn set_dupsort_hash32(&self, db: Database) {
+        unsafe { ffi::mdb_set_dupsort(self.txn(), db.dbi(), Some(compare_hash32)) };
+    }
+
+    /// Sets the 'dupsort' to compare_uint64
+    fn set_dupsort_uint64(&self, db: Database) {
+        unsafe { ffi::mdb_set_dupsort(self.txn(), db.dbi(), Some(compare_uint64)) };
+    }
+
+    /// Sets the 'compare' to compare_string
+    fn set_compare_string(&self, db: Database) {
+        unsafe { ffi::mdb_set_compare(self.txn(), db.dbi(), Some(compare_string)) };
+    }
+
+    /// Sets the 'compare' to compare_hash32
+    fn set_compare_hash32(&self, db: Database) {
+        unsafe { ffi::mdb_set_compare(self.txn(), db.dbi(), Some(compare_hash32)) };
+    }
+
+    /// Sets the 'dupsort' to compare_uint64
+    fn set_compare_uint64(&self, db: Database) {
+        unsafe { ffi::mdb_set_compare(self.txn(), db.dbi(), Some(compare_uint64)) };
     }
 }
 
@@ -422,14 +470,8 @@ impl<'env> Transaction for RwTransaction<'env> {
 mod test {
 
     use std::io::Write;
-    use std::sync::{
-        Arc,
-        Barrier,
-    };
-    use std::thread::{
-        self,
-        JoinHandle,
-    };
+    use std::sync::{Arc, Barrier};
+    use std::thread::{self, JoinHandle};
 
     use tempdir::TempDir;
 
