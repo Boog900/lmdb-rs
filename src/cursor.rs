@@ -665,7 +665,7 @@ mod test {
 
         let mut txn = env.begin_rw_txn().unwrap();
         let mut cursor = txn.open_rw_cursor(db).unwrap();
-        assert_eq!(items, cursor.iter_dup().flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
+        assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(
             items.clone().into_iter().take(1).collect::<Vec<(&[u8], &[u8])>>(),

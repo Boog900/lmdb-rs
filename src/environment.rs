@@ -276,9 +276,9 @@ impl Environment {
         let info = self.info()?;
         let size_used = stats.page_size() as usize * info.last_pgno();
         if size_used as f32 / info.map_size() as f32 > RESIZE_PERCENT {
-            return Ok(true);
+            Ok(true)
         } else {
-            return Ok(false);
+            Ok(false)
         }
     }
 

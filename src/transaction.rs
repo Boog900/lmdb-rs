@@ -21,7 +21,7 @@ extern "C" fn compare_hash32(a: *const ffi::MDB_val, b: *const ffi::MDB_val) -> 
                 std::cmp::Ordering::Less => return -1,
             }
         }
-        return 0;
+        0
     }
 }
 
@@ -30,9 +30,9 @@ extern "C" fn compare_uint64(a: *const ffi::MDB_val, b: *const ffi::MDB_val) -> 
         let va = (*a).mv_data.cast::<u64>().read();
         let vb = (*b).mv_data.cast::<u64>().read();
         match u64::cmp(&va, &vb) {
-            std::cmp::Ordering::Equal => return 0,
-            std::cmp::Ordering::Greater => return 1,
-            std::cmp::Ordering::Less => return -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
+            std::cmp::Ordering::Less => -1,
         }
     }
 }
@@ -50,9 +50,9 @@ extern "C" fn compare_string(a: *const ffi::MDB_val, b: *const ffi::MDB_val) -> 
             }
         }
         match usize::cmp(&(*a).mv_size, &(*b).mv_size) {
-            std::cmp::Ordering::Equal => return 0,
-            std::cmp::Ordering::Greater => return 1,
-            std::cmp::Ordering::Less => return -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
+            std::cmp::Ordering::Less => -1,
         }
     }
 }
