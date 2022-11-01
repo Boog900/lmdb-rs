@@ -1,13 +1,12 @@
 [package]
-name = "lmdb-rkv"
+name = "monero-lmdb-rkv"
 # NB: When modifying, also modify html_root_url in lib.rs
-version = "0.14.0"
+version = "0.1.0"
 authors = ["Dan Burkert <dan@danburkert.com>", "Victor Porof <vporof@mozilla.com>"]
 license = "Apache-2.0"
 description = "Idiomatic and safe LMDB wrapper."
-documentation = "https://docs.rs/lmdb-rkv"
-homepage = "https://github.com/mozilla/lmdb-rs"
-repository = "https://github.com/mozilla/lmdb-rs.git"
+documentation = "https://docs.rs/monero-lmdb-rkv"
+homepage = "https://github.com/Boog900/lmdb-rs"
 readme = "README.md"
 keywords = ["LMDB", "database", "storage-engine", "bindings", "library"]
 categories = ["database"]
