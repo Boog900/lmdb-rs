@@ -19,7 +19,7 @@ use flags::{DatabaseFlags, EnvironmentFlags};
 use transaction::{RoTransaction, RwTransaction, Transaction};
 
 const RESIZE_PERCENT: f32 = 0.9;
-const ADD_SIZE: u32 = 1 << 30; // 1GB
+const ADD_SIZE: usize = 1 << 30; // 1GB
 
 #[cfg(windows)]
 /// Adding a 'missing' trait from windows OsStrExt
@@ -289,9 +289,9 @@ impl Environment {
     pub fn do_resize(&self) -> Result<()> {
         let stats = self.stat()?;
         let info = self.info()?;
-        let mut new_mapsize = info.map_size() as u32 + ADD_SIZE;
-        new_mapsize += new_mapsize % stats.page_size() as u32;
-        self.set_map_size(new_mapsize as usize)?;
+        let mut new_mapsize = info.map_size() + ADD_SIZE;
+        new_mapsize += new_mapsize % stats.page_size() as usize;
+        self.set_map_size(new_mapsize)?;
         Ok(())
     }
 
