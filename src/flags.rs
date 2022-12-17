@@ -144,6 +144,9 @@ bitflags! {
     #[derive(Default)]
     pub struct WriteFlags: c_uint {
 
+        #[doc="Insert the new item with no flags."]
+        const NO_FLAGS = 0;
+
         #[doc="Insert the new item only if the key does not already appear in the database."]
         #[doc="The function will return `LmdbError::KeyExist` if the key already appears in the"]
         #[doc="database, even if the database supports duplicates (`DUP_SORT`)."]
